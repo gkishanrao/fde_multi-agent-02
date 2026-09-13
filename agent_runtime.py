@@ -68,6 +68,8 @@ class ParallelAgentExecutor:
         self.tracer = tracer or AgentTracer()
 
     def run(self, tasks: dict[str, Callable[[AgentContext], Any]]) -> dict[str, Any]:
+        if not tasks:
+            raise ValueError("tasks must not be empty")
         results: dict[str, Any] = {agent_id: None for agent_id in tasks}
         errors: dict[str, Exception] = {}
         with ThreadPoolExecutor(max_workers=max(1, len(tasks))) as executor:

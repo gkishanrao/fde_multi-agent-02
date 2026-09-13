@@ -80,6 +80,12 @@ class AgentRuntimeTests(unittest.TestCase):
         self.assertEqual(len(error_events), 1)
         self.assertEqual(error_events[0]["agent_id"], "bad-agent")
         self.assertEqual(error_events[0]["error"], "boom")
+        self.assertIn("duration_ms", error_events[0])
+
+    def test_empty_task_set_is_rejected(self) -> None:
+        executor = ParallelAgentExecutor()
+        with self.assertRaisesRegex(ValueError, "tasks must not be empty"):
+            executor.run({})
 
 
 if __name__ == "__main__":

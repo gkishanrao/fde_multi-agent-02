@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from threading import Lock
 from time import perf_counter
@@ -62,7 +62,8 @@ class ParallelAgentExecutor:
         results: dict[str, Any] = {}
         with ThreadPoolExecutor(max_workers=max(1, len(tasks))) as executor:
             futures = {executor.submit(self._run_one, agent_id, task): agent_id for agent_id, task in tasks.items()}
-            for future, agent_id in futures.items():
+            for future in as_completed(futures):
+                agent_id = futures[future]
                 results[agent_id] = future.result()
         return results
 

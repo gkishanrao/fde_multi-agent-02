@@ -85,6 +85,7 @@ class AgentRuntimeTests(unittest.TestCase):
         self.assertEqual(len(error_events), 1)
         self.assertEqual(error_events[0]["agent_id"], "bad-agent")
         self.assertEqual(error_events[0]["error"], "boom")
+        self.assertEqual(error_events[0]["error_type"], "ValueError")
         self.assertIn("duration_ms", error_events[0])
 
     def test_empty_task_set_is_rejected(self) -> None:
@@ -92,10 +93,30 @@ class AgentRuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "tasks must not be empty"):
             executor.run({})
 
+    def test_duplicate_agent_ids_in_iterable_tasks_are_rejected(self) -> None:
+        executor = ParallelAgentExecutor()
+        task = lambda _ctx: "ok"
+        with self.assertRaisesRegex(ValueError, "duplicate agent_id: agent-1"):
+            executor.run([("agent-1", task), ("agent-1", task)])
+
     def test_more_than_thirty_two_agents_are_executed(self) -> None:
         executor = ParallelAgentExecutor()
+        lock = threading.Lock()
+        active = 0
+        max_active = 0
+
+        def tracked_task(ctx):
+            nonlocal active, max_active
+            with lock:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.01)
+            with lock:
+                active -= 1
+            return f"ok-{ctx.agent_id.split('-')[-1]}"
+
         tasks = {
-            f"agent-{index}": (lambda ctx, i=index: f"ok-{i}")
+            f"agent-{index}": tracked_task
             for index in range(40)
         }
 
@@ -104,6 +125,7 @@ class AgentRuntimeTests(unittest.TestCase):
         self.assertEqual(len(results), 40)
         self.assertEqual(results["agent-0"], "ok-0")
         self.assertEqual(results["agent-39"], "ok-39")
+        self.assertGreater(max_active, 1)
 
 
 if __name__ == "__main__":

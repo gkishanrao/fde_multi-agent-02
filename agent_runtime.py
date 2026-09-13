@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from threading import Lock
 from time import perf_counter
-from typing import Any, Callable
+from typing import Any, Callable, Iterable, Mapping
 
 
 class AgentMemory:
@@ -84,15 +84,18 @@ class ParallelAgentExecutor:
         self.tracer = tracer or AgentTracer()
         self.max_workers = max_workers
 
-    def run(self, tasks: dict[str, Callable[[AgentContext], Any]]) -> dict[str, Any]:
-        if not tasks:
+    def run(
+        self, tasks: Mapping[str, Callable[[AgentContext], Any]] | Iterable[tuple[str, Callable[[AgentContext], Any]]]
+    ) -> dict[str, Any]:
+        task_items = self._normalize_tasks(tasks)
+        if not task_items:
             raise ValueError("tasks must not be empty")
-        results: dict[str, Any] = {agent_id: None for agent_id in tasks}
+        results: dict[str, Any] = {agent_id: None for agent_id, _ in task_items}
         errors: dict[str, Exception] = {}
-        requested_workers = len(tasks) if self.max_workers is None else self.max_workers
-        max_workers = min(requested_workers, len(tasks))
+        requested_workers = len(task_items) if self.max_workers is None else self.max_workers
+        max_workers = min(requested_workers, len(task_items))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(self._run_one, agent_id, task): agent_id for agent_id, task in tasks.items()}
+            futures = {executor.submit(self._run_one, agent_id, task): agent_id for agent_id, task in task_items}
             for future in as_completed(futures):
                 agent_id = futures[future]
                 try:
@@ -103,6 +106,17 @@ class ParallelAgentExecutor:
             raise AgentExecutionError(results=results, errors=errors)
         return results
 
+    def _normalize_tasks(
+        self, tasks: Mapping[str, Callable[[AgentContext], Any]] | Iterable[tuple[str, Callable[[AgentContext], Any]]]
+    ) -> list[tuple[str, Callable[[AgentContext], Any]]]:
+        task_items = list(tasks.items()) if isinstance(tasks, Mapping) else list(tasks)
+        seen_ids: set[str] = set()
+        for agent_id, _ in task_items:
+            if agent_id in seen_ids:
+                raise ValueError(f"duplicate agent_id: {agent_id}")
+            seen_ids.add(agent_id)
+        return task_items
+
     def _run_one(self, agent_id: str, task: Callable[[AgentContext], Any]) -> Any:
         context = AgentContext(agent_id=agent_id, memory=self.memory, tracer=self.tracer)
         self.tracer.record("agent.start", agent_id)
@@ -112,5 +126,11 @@ class ParallelAgentExecutor:
             self.tracer.record("agent.success", agent_id, duration_ms=(perf_counter() - started) * 1000)
             return result
         except Exception as exc:
-            self.tracer.record("agent.error", agent_id, duration_ms=(perf_counter() - started) * 1000, error=str(exc))
+            self.tracer.record(
+                "agent.error",
+                agent_id,
+                duration_ms=(perf_counter() - started) * 1000,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
             raise

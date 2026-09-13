@@ -63,16 +63,24 @@ class AgentContext:
 class ParallelAgentExecutor:
     """Run named agent callables in parallel with tracing hooks."""
 
-    def __init__(self, memory: AgentMemory | None = None, tracer: AgentTracer | None = None) -> None:
+    def __init__(
+        self,
+        memory: AgentMemory | None = None,
+        tracer: AgentTracer | None = None,
+        max_workers: int | None = None,
+    ) -> None:
+        if max_workers is not None and max_workers < 1:
+            raise ValueError("max_workers must be >= 1 when provided")
         self.memory = memory or AgentMemory()
         self.tracer = tracer or AgentTracer()
+        self.max_workers = max_workers
 
     def run(self, tasks: dict[str, Callable[[AgentContext], Any]]) -> dict[str, Any]:
         if not tasks:
             raise ValueError("tasks must not be empty")
         results: dict[str, Any] = {agent_id: None for agent_id in tasks}
         errors: dict[str, Exception] = {}
-        max_workers = min(32, len(tasks))
+        max_workers = min(self.max_workers or len(tasks), len(tasks))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(self._run_one, agent_id, task): agent_id for agent_id, task in tasks.items()}
             for future in as_completed(futures):

@@ -92,6 +92,19 @@ class AgentRuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "tasks must not be empty"):
             executor.run({})
 
+    def test_more_than_thirty_two_agents_are_executed(self) -> None:
+        executor = ParallelAgentExecutor()
+        tasks = {
+            f"agent-{index}": (lambda ctx, i=index: f"ok-{i}")
+            for index in range(40)
+        }
+
+        results = executor.run(tasks)
+
+        self.assertEqual(len(results), 40)
+        self.assertEqual(results["agent-0"], "ok-0")
+        self.assertEqual(results["agent-39"], "ok-39")
+
 
 if __name__ == "__main__":
     unittest.main()

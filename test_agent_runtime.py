@@ -1,3 +1,4 @@
+import threading
 import time
 import unittest
 
@@ -22,25 +23,25 @@ class AgentRuntimeTests(unittest.TestCase):
 
     def test_parallel_execution_collects_results(self) -> None:
         executor = ParallelAgentExecutor()
+        start_barrier = threading.Barrier(2)
 
         def agent_one(ctx):
+            start_barrier.wait(timeout=1)
             time.sleep(0.05)
             ctx.memory.put(ctx.agent_id, "value", 1)
             return "done-1"
 
         def agent_two(ctx):
+            start_barrier.wait(timeout=1)
             time.sleep(0.05)
             ctx.memory.put(ctx.agent_id, "value", 2)
             return "done-2"
 
-        started = time.perf_counter()
         results = executor.run({"agent-1": agent_one, "agent-2": agent_two})
-        elapsed = time.perf_counter() - started
 
         self.assertEqual(results, {"agent-1": "done-1", "agent-2": "done-2"})
         self.assertEqual(executor.memory.get("agent-1", "value"), 1)
         self.assertEqual(executor.memory.get("agent-2", "value"), 2)
-        self.assertLess(elapsed, 0.1)
 
     def test_agent_tracing_records_start_and_success(self) -> None:
         tracer = AgentTracer()

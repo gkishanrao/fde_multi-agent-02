@@ -59,7 +59,7 @@ class ParallelAgentExecutor:
         self.tracer = tracer or AgentTracer()
 
     def run(self, tasks: dict[str, Callable[[AgentContext], Any]]) -> dict[str, Any]:
-        results: dict[str, Any] = {}
+        results: dict[str, Any] = {agent_id: None for agent_id in tasks}
         with ThreadPoolExecutor(max_workers=max(1, len(tasks))) as executor:
             futures = {executor.submit(self._run_one, agent_id, task): agent_id for agent_id, task in tasks.items()}
             for future in as_completed(futures):

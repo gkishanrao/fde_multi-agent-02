@@ -41,11 +41,16 @@ class AgentTracer:
 
     def events(self) -> list[dict[str, Any]]:
         with self._lock:
-            return list(self._events)
+            return [event.copy() for event in self._events]
 
 
 class AgentExecutionError(RuntimeError):
-    """Raised when one or more agents fail during parallel execution."""
+    """Raised when one or more agents fail.
+
+    Attributes:
+        results: Per-agent output values collected before completion.
+        errors: Per-agent raised exceptions for failed agents.
+    """
 
     def __init__(self, results: dict[str, Any], errors: dict[str, Exception]) -> None:
         self.results = results
@@ -61,7 +66,11 @@ class AgentContext:
 
 
 class ParallelAgentExecutor:
-    """Run named agent callables in parallel with tracing hooks."""
+    """Run named agent callables in parallel with tracing hooks.
+
+    `run()` raises AgentExecutionError if any agent fails, including partial
+    `results` and per-agent `errors`.
+    """
 
     def __init__(
         self,
@@ -80,7 +89,8 @@ class ParallelAgentExecutor:
             raise ValueError("tasks must not be empty")
         results: dict[str, Any] = {agent_id: None for agent_id in tasks}
         errors: dict[str, Exception] = {}
-        max_workers = min(self.max_workers or len(tasks), len(tasks))
+        requested_workers = len(tasks) if self.max_workers is None else self.max_workers
+        max_workers = min(requested_workers, len(tasks))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(self._run_one, agent_id, task): agent_id for agent_id, task in tasks.items()}
             for future in as_completed(futures):

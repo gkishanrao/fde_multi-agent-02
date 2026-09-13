@@ -22,7 +22,8 @@ class AgentRuntimeTests(unittest.TestCase):
         )
 
     def test_parallel_execution_collects_results(self) -> None:
-        executor = ParallelAgentExecutor()
+        tracer = AgentTracer()
+        executor = ParallelAgentExecutor(tracer=tracer)
         start_barrier = threading.Barrier(2)
 
         def agent_one(ctx):
@@ -42,6 +43,10 @@ class AgentRuntimeTests(unittest.TestCase):
         self.assertEqual(results, {"agent-1": "done-1", "agent-2": "done-2"})
         self.assertEqual(executor.memory.get("agent-1", "value"), 1)
         self.assertEqual(executor.memory.get("agent-2", "value"), 2)
+        start_events = {event["agent_id"] for event in tracer.events() if event["event"] == "agent.start"}
+        success_events = {event["agent_id"] for event in tracer.events() if event["event"] == "agent.success"}
+        self.assertEqual(start_events, {"agent-1", "agent-2"})
+        self.assertEqual(success_events, {"agent-1", "agent-2"})
 
     def test_agent_tracing_records_start_and_success(self) -> None:
         tracer = AgentTracer()

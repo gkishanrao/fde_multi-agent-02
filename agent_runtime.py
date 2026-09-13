@@ -72,7 +72,8 @@ class ParallelAgentExecutor:
             raise ValueError("tasks must not be empty")
         results: dict[str, Any] = {agent_id: None for agent_id in tasks}
         errors: dict[str, Exception] = {}
-        with ThreadPoolExecutor(max_workers=max(1, len(tasks))) as executor:
+        max_workers = min(32, len(tasks))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(self._run_one, agent_id, task): agent_id for agent_id, task in tasks.items()}
             for future in as_completed(futures):
                 agent_id = futures[future]

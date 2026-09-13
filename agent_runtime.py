@@ -44,6 +44,15 @@ class AgentTracer:
             return list(self._events)
 
 
+class AgentExecutionError(RuntimeError):
+    """Raised when one or more agents fail during parallel execution."""
+
+    def __init__(self, results: dict[str, Any], errors: dict[str, Exception]) -> None:
+        self.results = results
+        self.errors = errors
+        super().__init__(f"{len(errors)} agent(s) failed: {', '.join(sorted(errors))}")
+
+
 @dataclass(frozen=True)
 class AgentContext:
     agent_id: str
@@ -60,11 +69,17 @@ class ParallelAgentExecutor:
 
     def run(self, tasks: dict[str, Callable[[AgentContext], Any]]) -> dict[str, Any]:
         results: dict[str, Any] = {agent_id: None for agent_id in tasks}
+        errors: dict[str, Exception] = {}
         with ThreadPoolExecutor(max_workers=max(1, len(tasks))) as executor:
             futures = {executor.submit(self._run_one, agent_id, task): agent_id for agent_id, task in tasks.items()}
             for future in as_completed(futures):
                 agent_id = futures[future]
-                results[agent_id] = future.result()
+                try:
+                    results[agent_id] = future.result()
+                except Exception as exc:
+                    errors[agent_id] = exc
+        if errors:
+            raise AgentExecutionError(results=results, errors=errors)
         return results
 
     def _run_one(self, agent_id: str, task: Callable[[AgentContext], Any]) -> Any:

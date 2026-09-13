@@ -2,7 +2,7 @@ import threading
 import time
 import unittest
 
-from agent_runtime import AgentMemory, AgentTracer, ParallelAgentExecutor
+from agent_runtime import AgentExecutionError, AgentMemory, AgentTracer, ParallelAgentExecutor
 
 
 class AgentRuntimeTests(unittest.TestCase):
@@ -58,6 +58,28 @@ class AgentRuntimeTests(unittest.TestCase):
         self.assertEqual(events[1]["event"], "agent.success")
         self.assertEqual(events[1]["agent_id"], "agent-x")
         self.assertIn("duration_ms", events[1])
+
+    def test_failing_agent_raises_and_records_error_trace(self) -> None:
+        tracer = AgentTracer()
+        executor = ParallelAgentExecutor(tracer=tracer)
+
+        def good_agent(_ctx):
+            return "ok"
+
+        def bad_agent(_ctx):
+            raise ValueError("boom")
+
+        with self.assertRaises(AgentExecutionError) as raised:
+            executor.run({"good-agent": good_agent, "bad-agent": bad_agent})
+
+        self.assertEqual(raised.exception.results["good-agent"], "ok")
+        self.assertIsNone(raised.exception.results["bad-agent"])
+        self.assertIn("bad-agent", raised.exception.errors)
+
+        error_events = [event for event in tracer.events() if event["event"] == "agent.error"]
+        self.assertEqual(len(error_events), 1)
+        self.assertEqual(error_events[0]["agent_id"], "bad-agent")
+        self.assertEqual(error_events[0]["error"], "boom")
 
 
 if __name__ == "__main__":
